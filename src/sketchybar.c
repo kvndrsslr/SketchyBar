@@ -161,7 +161,7 @@ static void load_symbols() {
 static void parse_arguments(int argc, char **argv) {
   if ((string_equals(argv[1], VERSION_OPT_LONG))
       || (string_equals(argv[1], VERSION_OPT_SHRT))) {
-    fprintf(stdout, "sketchybar-v%d.%d.%d\n", MAJOR, MINOR, PATCH);
+    fprintf(stdout, "sketchybar-v%d.%d.%d+daily816.817.847\n", MAJOR, MINOR, PATCH);
     exit(EXIT_SUCCESS);
   } else if ((string_equals(argv[1], HELP_OPT_LONG))
       || (string_equals(argv[1], HELP_OPT_SHRT))) {
