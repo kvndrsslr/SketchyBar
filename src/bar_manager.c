@@ -577,6 +577,14 @@ void bar_manager_update(struct bar_manager* bar_manager, bool forced) {
 }
 
 void bar_manager_reset(struct bar_manager* bar_manager) {
+  // A reset is the recovery: the bars are rebuilt from whatever displays exist
+  // right now, so a decision left pending describes a topology that is about to be
+  // replaced. Leaving it set re-enters this path from a refresh that lands inside
+  // the reset, when the bar list has already been emptied - which reads as no bars
+  // against three displays, and the decision answers a count mismatch with a
+  // rebuild, which resets again.
+  bar_manager->display_recovery_pending = false;
+
   bar_manager_reset_bar_association(bar_manager);
   for (int i = 0; i < bar_manager->bar_count; i++) {
     for (int j = 0; j < bar_manager->bar_item_count; j++) {
