@@ -291,18 +291,25 @@ bool bar_manager_set_hidden(struct bar_manager *bar_manager, uint32_t adid, bool
 }
 
 bool bar_manager_set_topmost(struct bar_manager *bar_manager, char level, bool topmost) {
+  uint32_t window_level = kCGBackstopMenuLevel;
   if (topmost) {
     if (level == TOPMOST_LEVEL_WINDOW) {
-      bar_manager->window_level = kCGFloatingWindowLevel;
+      window_level = kCGFloatingWindowLevel;
     } else if (level == TOPMOST_LEVEL_ALL) {
-      bar_manager->window_level = kCGStatusWindowLevel;
+      window_level = kCGStatusWindowLevel;
     }
-  } else {
-    bar_manager->window_level = kCGBackstopMenuLevel;
   }
 
-  bar_manager_reset(bar_manager);
+  // Re-creating every window is not free: on macOS 26 the bar stays blank
+  // until the window server has decoded the new windows' layer bounds, and a
+  // configuration that restates `topmost` (as every config script does) was
+  // resetting the whole bar - windows, not properties - on every reload.
+  if (bar_manager->topmost == topmost && bar_manager->window_level == window_level)
+    return false;
+
+  bar_manager->window_level = window_level;
   bar_manager->topmost = topmost;
+  bar_manager_reset(bar_manager);
   return true;
 }
 
