@@ -69,39 +69,71 @@ static void event_mach_message(void* context) {
   handle_message_mach(context);
 }
 
-static void event_mouse_up(void* context) {
-  CGPoint point = CGEventGetLocation(context);
+/// What a mouse event landed on: the item under the cursor, the bar whose own
+/// background window was hit, and a popup, if any.
+struct click_target {
+  struct bar_item* item;
+  struct bar* bar;
+  struct popup* popup;
+  CGPoint point;
+  CGPoint point_in_window;
+};
+
+static struct click_target resolve_click_target(CGEventRef context) {
+  struct click_target target = { 0 };
+  target.point = CGEventGetLocation(context);
   uint32_t wid = get_wid_from_cg_event(context);
-  CGEventType type = CGEventGetType(context);
-  uint32_t mouse_button_code = CGEventGetIntegerValueField(context, kCGMouseEventButtonNumber);
-  uint32_t modifier_keys = CGEventGetFlags(context);
 
   struct window* window = NULL;
-  struct bar_item* bar_item = bar_manager_get_item_by_wid(&g_bar_manager,
-                                                          wid,
-                                                          &window        );
-
-  if (!bar_item || bar_item->type == BAR_COMPONENT_GROUP) {
-    bar_item = bar_manager_get_item_by_point(&g_bar_manager, point, &window);
+  target.item = bar_manager_get_item_by_wid(&g_bar_manager, wid, &window);
+  if (!target.item || target.item->type == BAR_COMPONENT_GROUP) {
+    target.item = bar_manager_get_item_by_point(&g_bar_manager, target.point, &window);
   }
 
-  struct bar* bar = bar_manager_get_bar_by_wid(&g_bar_manager, wid);
-  struct popup* popup = bar_manager_get_popup_by_wid(&g_bar_manager, wid);
-  if (!bar_item && !popup && !bar) return;
+  target.bar = bar_manager_get_bar_by_wid(&g_bar_manager, wid);
+  target.popup = bar_manager_get_popup_by_wid(&g_bar_manager, wid);
 
-  CGPoint point_in_window_coords = CGPointZero;
-  if (bar_item && window) {
-    point_in_window_coords.x = point.x - window->origin.x;
-    point_in_window_coords.y = point.y - window->origin.y;
+  if (target.item && window) {
+    target.point_in_window.x = target.point.x - window->origin.x;
+    target.point_in_window.y = target.point.y - window->origin.y;
   }
 
-  bar_item_on_click(bar_item,
-                    type,
-                    mouse_button_code,
-                    modifier_keys,
-                    point_in_window_coords);
+  return target;
+}
 
-  if (bar_item && bar_item->needs_update)
+/// A press on the bar's own window rather than on an item.
+///
+/// The window server raises whatever window was pressed. The bar's background
+/// window is opaque and shares its level with every item window, so pressing on
+/// empty space puts it above all of them: that display's bar looks blank for as
+/// long as the press lasts. Ordering only runs when something sets
+/// `needs_ordering`, and redrawing never re-stacks windows, so without this the
+/// bar stays blank until an unrelated change happens to order the windows again.
+///
+/// Ordering at press time is what keeps the raise from being visible at all.
+static void event_mouse_down(void* context) {
+  struct click_target target = resolve_click_target(context);
+  if (target.item || target.popup || !target.bar) return;
+
+  bar_order_item_windows(target.bar);
+}
+
+static void event_mouse_up(void* context) {
+  struct click_target target = resolve_click_target(context);
+  if (!target.item && !target.popup && !target.bar) return;
+
+  bar_item_on_click(target.item,
+                    CGEventGetType(context),
+                    CGEventGetIntegerValueField(context, kCGMouseEventButtonNumber),
+                    CGEventGetFlags(context),
+                    target.point_in_window);
+
+  // Also covers a press whose down event never arrived.
+  if (!target.item && !target.popup && target.bar) {
+    bar_order_item_windows(target.bar);
+  }
+
+  if (target.item && target.item->needs_update)
     bar_manager_refresh(&g_bar_manager, false);
 }
 
@@ -352,6 +384,7 @@ static callback_type* event_handler[] = {
   [DISPLAY_MOVED]              = event_display_moved,
   [DISPLAY_RESIZED]            = event_display_resized,
   [DISPLAY_CHANGED]            = event_display_changed,
+  [MOUSE_DOWN]                 = event_mouse_down,
   [MOUSE_UP]                   = event_mouse_up,
   [MOUSE_DRAGGED]              = event_mouse_dragged,
   [MOUSE_ENTERED]              = event_mouse_entered,
